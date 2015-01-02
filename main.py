@@ -38,31 +38,27 @@ def try_to_connect(host):
 
 class PlainText:
 
-    def handle(self, s):
-        while True:
-            r, _, _ = select.select([sys.stdin, s], [], [])
+    def write(self, message):
+        self.s.send(message)
 
-            if r[0] == sys.stdin:
-                message = raw_input()
-                s.send(message)
-
-            if r[0] == s:
-                message = s.recv(1024)
-                if not message:
-                    break
-                print(message)
+    def read(self):
+        return self.s.recv(1024)
 
 
-class Server(PlainText):
+class Server:
 
     def __init__(self, s):
         self.s = s
 
-    def serve(self):
+    def serve(self, handler):
         self.s.listen(1)
         while True:
             c, a = self.s.accept()
-            self.handle(c)
+            handler(Client(c))
+
+
+STDIN = 0
+SOCKET = 1
 
 
 class Client(PlainText):
@@ -70,8 +66,37 @@ class Client(PlainText):
     def __init__(self, s):
         self.s = s
 
-    def serve(self):
-        self.handle(self.s)
+    def select(self):
+        r, _, _ = select.select([sys.stdin, self.s], [], [])
+
+        if r[0] == sys.stdin:
+            return (sys.stdin, STDIN)
+
+        if r[0] == self.s:
+            return (self.s, SOCKET)
+
+
+class RawTerminal:
+
+    def read(self):
+        return raw_input()
+
+    def write(self, message):
+        print(message)
+
+
+def chat(client):
+    if client is None:
+        raise 'Can\'t chat with None'
+
+    while True:
+        terminal = RawTerminal()
+        descriptor, who = client.select()
+
+        if who == STDIN:
+            client.write(terminal.read())
+        if who == SOCKET:
+            terminal.write(client.read())
 
 
 def main():
@@ -79,12 +104,10 @@ def main():
 
     s = try_to_bind(host)
     if s is not None:
-        Server(s).serve()
-
-    s = try_to_connect(host)
-    if s is not None:
-        Client(s).serve()
-
+        Server(s).serve(chat)
+    else:
+        s = try_to_connect(host)
+        chat(Client(s))
 
 if __name__ == '__main__':
     main()
