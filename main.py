@@ -36,23 +36,24 @@ def try_to_connect(host):
         return None
 
 
-def handle(s):
-    print("Hello")
-    while True:
-        r, _, _ = select.select([sys.stdin, s], [], [])
+class PlainText:
 
-        if r[0] == sys.stdin:
-            message = raw_input()
-            s.send(message)
+    def handle(self, s):
+        while True:
+            r, _, _ = select.select([sys.stdin, s], [], [])
 
-        if r[0] == s:
-            message = s.recv(1024)
-            if not message:
-                break
-            print(message)
+            if r[0] == sys.stdin:
+                message = raw_input()
+                s.send(message)
+
+            if r[0] == s:
+                message = s.recv(1024)
+                if not message:
+                    break
+                print(message)
 
 
-class Server:
+class Server(PlainText):
 
     def __init__(self, s):
         self.s = s
@@ -61,16 +62,16 @@ class Server:
         self.s.listen(1)
         while True:
             c, a = self.s.accept()
-            handle(c)
+            self.handle(c)
 
 
-class Client:
+class Client(PlainText):
 
     def __init__(self, s):
         self.s = s
 
     def serve(self):
-        handle(self.s)
+        self.handle(self.s)
 
 
 def main():
