@@ -38,11 +38,11 @@ def try_to_connect(host):
 
 class PlainText:
 
-    def write(self, message):
-        self.s.send(message)
+    def encipher(self, message):
+        return message
 
-    def read(self):
-        return self.s.recv(1024)
+    def decipher(self, message):
+        return message
 
 
 class Server:
@@ -66,9 +66,15 @@ class Client(PlainText):
     def __init__(self, s):
         self.s = s
 
+    def read(self):
+        message = self.decipher(self.s.recv(2 ** 16))
+        return message
+
+    def write(self, message):
+        self.s.send(self.encipher(message))
+
     def select(self):
         r, _, _ = select.select([sys.stdin, self.s], [], [])
-
         if r[0] == sys.stdin:
             return (sys.stdin, STDIN)
 
@@ -89,10 +95,9 @@ def chat(client):
     if client is None:
         raise 'Can\'t chat with None'
 
+    terminal = RawTerminal()
     while True:
-        terminal = RawTerminal()
         descriptor, who = client.select()
-
         if who == STDIN:
             client.write(terminal.read())
         if who == SOCKET:
@@ -104,7 +109,8 @@ def main():
 
     s = try_to_bind(host)
     if s is not None:
-        Server(s).serve(chat)
+        server = Server(s)
+        server.serve(chat)
     else:
         s = try_to_connect(host)
         chat(Client(s))
