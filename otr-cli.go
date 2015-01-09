@@ -39,23 +39,27 @@ func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
 
     n, err = wrapper.conn.Read(buffer)
     out, _, change, toSend, _ := wrapper.conversation.Receive(buffer[:n])
+
     n = copy(p, out)
     SendMessages(toSend, wrapper.conn)
 
     switch change {
         case otr.NewKeys:
-            fmt.Printf("%X\n", wrapper.conversation.TheirPublicKey.Fingerprint())
+            fmt.Printf("[!] Their fingerprint: %X\n", wrapper.conversation.TheirPublicKey.Fingerprint())
             if *isServer {
+                fmt.Printf("[!] Asking a question with answer: %s\n", *smpSecret)
                 msgs, _ := wrapper.conversation.Authenticate("Do you know secret?", []byte(*smpSecret))
                 SendMessages(msgs, wrapper.conn)
             }
         case otr.SMPSecretNeeded:
-            msgs, _ := wrapper.conversation.Authenticate("Do you know secret?", []byte(*smpSecret))
+            question := wrapper.conversation.SMPQuestion()
+            fmt.Printf("[!] Answer a question '%s'\n", question)
+            msgs, _ := wrapper.conversation.Authenticate(question, []byte(*smpSecret))
             SendMessages(msgs, wrapper.conn)
         case otr.SMPComplete:
-            fmt.Println("[!] OK")
+            fmt.Println("[!] Answer is correct")
         case otr.SMPFailed:
-            fmt.Println("[!] Fail")
+            fmt.Println("[!] Answer is wrong")
             os.Exit(1)
     }
 
