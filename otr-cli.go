@@ -20,12 +20,32 @@ type OTRWrapper struct {
     privateKey *otr.PrivateKey
 }
 
-func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
-    return wrapper.conn.Read(p)
+func SendMessages(messages [][]byte, writer io.Writer) (int, error) {
+    allN := 0
+    for _, msg := range messages {
+        n, err := writer.Write(msg)
+        allN += n
+        if err != nil {
+            return allN, err
+        }
+    }
+    return allN, nil
 }
 
-func (wrapper *OTRWrapper) Write(p []byte) (n int, err error) {
-    return wrapper.conn.Write(p)
+func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
+    buffer := make([]byte, len(p))
+
+    n, err = wrapper.conn.Read(buffer)
+    out, _, _, msgs, _ := wrapper.conversation.Receive(buffer[:n])
+    SendMessages(msgs, wrapper.conn)
+
+    n = copy(p, out)
+    return n, err
+}
+
+func (wrapper *OTRWrapper) Write(p []byte) (int, error) {
+    msgs, _ := wrapper.conversation.Send(p) // TODO(ld86) Handle all errors
+    return SendMessages(msgs, wrapper.conn)
 }
 
 func GetWrapper(conn io.ReadWriter) *OTRWrapper {
@@ -35,6 +55,11 @@ func GetWrapper(conn io.ReadWriter) *OTRWrapper {
     wrapper.privateKey = new(otr.PrivateKey)
     wrapper.privateKey.Generate(rand.Reader)
     wrapper.conversation.PrivateKey = wrapper.privateKey;
+
+    if *isServer {
+        wrapper.Write([]byte(otr.QueryMessage))
+    }
+
     return wrapper
 }
 
