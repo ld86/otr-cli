@@ -6,12 +6,14 @@ import  (
             "net"
             "os"
             "crypto/rand"
+            "fmt"
 
             "golang.org/x/crypto/otr"
         )
 
 var (
     isServer = flag.Bool("l", false, "Enable listen mode")
+    smpSecret = flag.String("s", "secret", "Secret for SMP")
 )
 
 type OTRWrapper struct {
@@ -36,16 +38,34 @@ func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
     buffer := make([]byte, len(p))
 
     n, err = wrapper.conn.Read(buffer)
-    out, _, _, msgs, _ := wrapper.conversation.Receive(buffer[:n])
-    SendMessages(msgs, wrapper.conn)
-
+    out, _, change, toSend, _ := wrapper.conversation.Receive(buffer[:n])
     n = copy(p, out)
+    SendMessages(toSend, wrapper.conn)
+
+    switch change {
+        case otr.NewKeys:
+            fmt.Printf("%X\n", wrapper.conversation.TheirPublicKey.Fingerprint())
+            if *isServer {
+                msgs, _ := wrapper.conversation.Authenticate("Do you know secret?", []byte(*smpSecret))
+                SendMessages(msgs, wrapper.conn)
+            }
+        case otr.SMPSecretNeeded:
+            msgs, _ := wrapper.conversation.Authenticate("Do you know secret?", []byte(*smpSecret))
+            SendMessages(msgs, wrapper.conn)
+        case otr.SMPComplete:
+            fmt.Println("[!] OK")
+        case otr.SMPFailed:
+            fmt.Println("[!] Fail")
+            os.Exit(1)
+    }
+
     return n, err
 }
 
 func (wrapper *OTRWrapper) Write(p []byte) (int, error) {
     msgs, _ := wrapper.conversation.Send(p) // TODO(ld86) Handle all errors
-    return SendMessages(msgs, wrapper.conn)
+    _, err := SendMessages(msgs, wrapper.conn)
+    return len(string(p)), err
 }
 
 func GetWrapper(conn io.ReadWriter) *OTRWrapper {
