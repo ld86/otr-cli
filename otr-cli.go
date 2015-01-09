@@ -5,6 +5,9 @@ import  (
             "io"
             "net"
             "os"
+            "crypto/rand"
+
+            "golang.org/x/crypto/otr"
         )
 
 var (
@@ -12,11 +15,34 @@ var (
 )
 
 type OTRWrapper struct {
+    conn io.ReadWriter
+    conversation *otr.Conversation
+    privateKey *otr.PrivateKey
 }
 
-func chat(a io.ReadWriter, b io.ReadWriter) {
-    go io.Copy(a, b)
-    io.Copy(b, a)
+func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
+    return wrapper.conn.Read(p)
+}
+
+func (wrapper *OTRWrapper) Write(p []byte) (n int, err error) {
+    return wrapper.conn.Write(p)
+}
+
+func GetWrapper(conn io.ReadWriter) *OTRWrapper {
+    wrapper := new(OTRWrapper)
+    wrapper.conn = conn
+    wrapper.conversation = new(otr.Conversation)
+    wrapper.privateKey = new(otr.PrivateKey)
+    wrapper.privateKey.Generate(rand.Reader)
+    wrapper.conversation.PrivateKey = wrapper.privateKey;
+    return wrapper
+}
+
+func chat(conn io.ReadWriter, terminal io.ReadWriter) {
+    wrapper := GetWrapper(conn)
+
+    go io.Copy(wrapper, terminal)
+    io.Copy(terminal, wrapper)
 }
 
 func main() {
