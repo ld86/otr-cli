@@ -9,6 +9,7 @@ import  (
             "fmt"
 
             "golang.org/x/crypto/otr"
+            "golang.org/x/crypto/ssh/terminal"
         )
 
 var (
@@ -20,6 +21,11 @@ type OTRWrapper struct {
     conn io.ReadWriter
     conversation *otr.Conversation
     privateKey *otr.PrivateKey
+}
+
+type TerminalWrapper struct {
+    conn io.ReadWriter
+    terminal *terminal.Terminal
 }
 
 func SendMessages(messages [][]byte, writer io.Writer) (int, error) {
@@ -34,10 +40,10 @@ func SendMessages(messages [][]byte, writer io.Writer) (int, error) {
     return allN, nil
 }
 
-func (wrapper *OTRWrapper) Read(p []byte) (n int, err error) {
+func (wrapper *OTRWrapper) Read(p []byte) (int, error) {
     buffer := make([]byte, len(p))
 
-    n, err = wrapper.conn.Read(buffer)
+    n, err := wrapper.conn.Read(buffer)
     out, _, change, toSend, _ := wrapper.conversation.Receive(buffer[:n])
 
     n = copy(p, out)
@@ -72,7 +78,7 @@ func (wrapper *OTRWrapper) Write(p []byte) (int, error) {
     return len(string(p)), err
 }
 
-func GetWrapper(conn io.ReadWriter) *OTRWrapper {
+func GetOTRWrapper(conn io.ReadWriter) *OTRWrapper {
     wrapper := new(OTRWrapper)
     wrapper.conn = conn
     wrapper.conversation = new(otr.Conversation)
@@ -87,14 +93,47 @@ func GetWrapper(conn io.ReadWriter) *OTRWrapper {
     return wrapper
 }
 
-func chat(conn io.ReadWriter, terminal io.ReadWriter) {
-    wrapper := GetWrapper(conn)
+func (wrapper *TerminalWrapper) Read(p []byte) (int, error) {
+    line, err := wrapper.terminal.ReadLine()
+    line += "\n"
+    return copy(p, []byte(line)), err
+}
 
-    go io.Copy(wrapper, terminal)
-    io.Copy(terminal, wrapper)
+func (wrapper *TerminalWrapper) Write(p []byte) (int, error) {
+    return wrapper.terminal.Write([]byte("<Their> " + string(p)))
+}
+
+func GetTerminalWrapper() *TerminalWrapper {
+    wrapper := new(TerminalWrapper)
+    wrapper.conn = os.Stdin
+    terminal.MakeRaw(0)
+    wrapper.terminal = terminal.NewTerminal(os.Stdin, "<You> ")
+    return wrapper
+}
+
+func chat(conn io.ReadWriter) {
+    otrWrapper := GetOTRWrapper(conn)
+    terminalWrapper := GetTerminalWrapper()
+
+    go io.Copy(terminalWrapper, otrWrapper)
+    io.Copy(otrWrapper, terminalWrapper)
 }
 
 func main() {
+    /*
+    state, _ := terminal.MakeRaw(0)
+    term := terminal.NewTerminal(os.Stdin, "$ ")
+    for {
+        line, err := term.ReadLine()
+        term.Write([]byte(fmt.Sprintf("# %d %s\n", len(line), err)))
+        if err != nil || len(line) == 0 {
+            terminal.Restore(0, state)
+            return
+        }
+        term.Write([]byte(fmt.Sprintf("$ %s\n", line)))
+    }
+    return
+    */
     flag.Parse()
     if len(flag.Args()) != 1 {
         return
@@ -116,5 +155,5 @@ func main() {
         conn, err = net.Dial("tcp", host)
         if err != nil { return }
     }
-    chat(conn, os.Stdin)
+    chat(conn)
 }
