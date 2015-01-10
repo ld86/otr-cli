@@ -109,7 +109,7 @@ func main() {
     host := flag.Args()[0]
     if *isServer {
         ln, err = net.Listen("tcp", host)
-        if err != nil { return }
+        if err != nil { return }            // TODO(ld86) Handle errors on connect
         conn, err = ln.Accept()
         if err != nil { return }
     } else {
